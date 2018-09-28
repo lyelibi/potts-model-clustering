@@ -1,0 +1,545 @@
+##### candidate do not touch f-spc
+
+from numpy import linalg as la
+import numpy as np
+from sklearn.metrics.pairwise import euclidean_distances
+from sklearn.preprocessing import StandardScaler,  MinMaxScaler
+from sklearn import datasets
+import pandas as pd
+from scipy.stats import itemfreq
+from joblib import Parallel, delayed
+import networkx as nx
+from sklearn import metrics
+import matplotlib as mpl
+#mpl.use('agg')
+import matplotlib.pyplot as plt
+import os
+
+
+
+def duplicates(lst, item):
+    return [i for i, x in enumerate(lst) if x == item]
+
+
+
+def kron(i, j):
+    if i == j:
+        return 1
+    else:
+        return 0
+def Lc(S,rho):
+    labels = np.unique(S)
+    lc = 0
+    for i in labels:
+        cluster = duplicates(S,i)
+        ''' n_s '''
+        ns = len( cluster )
+        if ns<=1:
+            continue
+        ''' c_s'''
+        cs = 0
+        for x in cluster:
+            for y in cluster:
+                cs += rho[x,y]
+
+        ''' gs is between 0 & 1'''
+        if cs<=ns:
+            return 0
+        if cs>=ns**2:
+            cs=ns**2-1e-6
+        B = (ns - 1)*np.log( (ns**2 - ns) / ( ns**2 - cs) )
+        A = np.log(ns/cs)
+        lc += A + B
+
+    lc= 0.5*lc
+    return lc
+
+
+def mutation(S):
+
+
+    bag = ['swap','scramble','flip','new','split','merge','bitflip','sp','per','pul']
+    mutation = np.random.choice(bag)
+
+    if mutation == 'new':
+        Q = np.random.randint(2,int(N/2))
+        S = np.random.randint(0,Q,N)
+    elif mutation == 'split':
+        labels = np.unique(S)
+        s = np.random.choice(labels)
+        idx = S == s
+        idx = np.arange(len(S))[idx]
+        e = np.random.choice(len(idx))
+        idx_ = idx[:e]
+        S[idx_] = max(labels)+1
+
+    elif mutation == 'merge':
+        labels = np.unique(S)
+        s = np.random.choice(labels)
+        labels = np.array([ x for x in labels if x!=s])
+        if len(labels)!=0:
+            S[S==s] = np.random.choice(labels)
+    elif mutation == 'sp':
+        labels = np.unique(S)
+        s = np.random.choice(labels)
+        idx = S == s
+        idx = np.arange(len(S))[idx]
+        e = np.random.choice(len(idx))
+        idx_ = idx[:e]
+
+        labels = np.array([ x for x in labels if x!=s])
+        if len(labels)!=0:
+            S[idx_] = np.random.choice(labels)
+    elif mutation == 'per':
+        S = np.random.permutation(S)
+    elif mutation == 'size':
+        q = len(np.unique(S))
+        S = np.random.randint(0,q,len(S))
+    elif mutation == 'bitflip':
+        s_ = np.random.randint(N)
+        s = S[s_]
+        labels = np.unique(S)
+        labels = [ x for x in labels if x!=s]
+        if len(labels)!=0:
+            S[s_] = np.random.choice(labels)
+    elif mutation == 'pul':
+        labels = np.unique(S)
+        ex =[]
+        for i in labels:
+            ex.append(len(duplicates(S,i)))
+        idx = np.argsort(ex)
+        s = idx[-1]
+        s = labels[s]
+        idx = duplicates(S, s)
+        n = 3
+        S[idx] = np.random.randint(max(labels)+1, max(labels)+1+n, len(idx))
+    elif  mutation == 'flip':
+        c = np.unique(S)
+        q = len(c)
+        new_c = np.random.randint(0, q, len(c))
+        conv = dict(zip(c, new_c))
+        S = np.vectorize(conv.get)(S)
+    elif mutation == 'swap':
+        size = np.random.randint(N)
+        idx = np.random.randint(0,N,size)
+        lab = S[idx]
+        lab = np.flip(lab, axis=0)
+        S[idx] = lab
+    elif mutation =='scramble':
+
+        size = np.random.randint(N)
+        idx = np.random.randint(0,N,size)
+        lab = S[idx]
+        lab = np.random.permutation(lab)
+        S[idx] = lab
+
+    ''' Make the Sividual sequential'''
+    c = np.unique(S)
+    q = len(c)
+    new_c = np.arange(q)
+    conv = dict(zip(c, new_c))
+    S = np.vectorize(conv.get)(S)
+    return S, mutation
+
+def nearestPD(A):
+    B = (A + A.T) / 2
+    _, s, V = la.svd(B)
+
+    H = np.dot(V.T, np.dot(np.diag(s), V))
+
+    A2 = (B + H) / 2
+
+    A3 = (A2 + A2.T) / 2
+
+    if isPD(A3):
+        return A3
+
+    spacing = np.spacing(la.norm(A))
+    # The above is different from [1]. It appears that MATLAB's `chol` Cholesky
+    # decomposition will accept matrixes with exactly 0-eigenvalue, whereas
+    # Numpy's will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
+    # for `np.spacing`), we use the above definition. CAVEAT: our `spacing`
+    # will be much larger than [1]'s `eps(mineig)`, since `mineig` is usually on
+    # the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
+    # `spacing` will, for Gaussian random matrixes of small dimension, be on
+    # othe order of 1e-16. In practice, both ways converge, as the unit test
+    # below suggests.
+    I = np.eye(A.shape[0])
+    k = 1
+    while not isPD(A3):
+        mineig = np.min(np.real(la.eigvals(A3)))
+        A3 += I * (-mineig * k**2 + spacing)
+        k += 1
+
+    return A3
+
+def isPD(B):
+    """Returns true when input is positive-definite, via Cholesky"""
+    try:
+        _ = la.cholesky(B)
+        return True
+    except la.LinAlgError:
+        return False
+
+
+def recombination(people, fitnesses, mutated, fit_):
+    n = len(people)
+    F = np.concatenate( (fitnesses, fit_))
+    P = np.concatenate( (people,mutated),axis=0)
+
+    idx = np.argsort(-F)
+    people = P[idx[:n]]
+    fitnesses = F[idx[:n]]
+    return people, fitnesses
+
+#implementation  of hendricks et al
+
+
+
+#np.random.seed(0)
+
+project = 'digits'
+subproject = 'data'
+mode = None
+bag = ['sp500','zillow', 'bls']
+
+
+if project == 'sp500':
+    subproject = 'sp500_1250d'
+    data = pd.read_csv('data/%s.csv' % subproject, index_col ='Name')
+    name = np.array((data.index))
+    ''' Industry and Sector Coloring'''
+    keys = pd.read_csv('data/key_stock.csv', index_col ='Name')
+    key = keys['Sector']
+    data = np.diff(np.log(data))
+    N = data.shape[0]
+
+    from scipy.spatial.distance import pdist, squareform
+    dmat = squareform(pdist(data, 'correlation'))
+    order = np.argsort(dmat[0,:])
+    data = data[order]
+    key = key[order]
+    name = name[order]
+
+    mode = 'rmt'
+    if not os.path.exists('data/%s/%s/%s' % (project,subproject,mode)):
+        os.makedirs('data/%s/%s/%s' % (project,subproject,mode))
+    if mode == 'rmt':
+        ''' Use wishart method with pca to remove principal components'''
+        cor = np.corrcoef(data)
+        cor = nearestPD(cor)
+        eig_vals, eig_vecs = np.linalg.eigh(cor)
+        eig_pairs = [ (np.abs(eig_vals[i]), eig_vecs[:,i]) for i in range(len(eig_vals))]
+        eig_pairs.sort()
+        Q = data.shape[1]/data.shape[0]
+        lamax = 1+1/Q+2*np.sqrt(1/Q)
+        lamin = 1+1/Q-2*np.sqrt(1/Q)
+#        wishart_pairs = [ i for i in eig_pairs if i[0] >= lamin and i[0]<= lamax ]
+
+#        fig = plt.figure()
+#        ax0 = fig.add_subplot(111)
+#        num_bins = int(data.shape[1]/2)
+#        n, bins, patches = ax0.hist(eig_vals, num_bins, normed=1, alpha=0.5)
+#        ax0.axes.axvline(x=lamin, c='red')
+#        ax0.axes.axvline(x=lamax, c='red')
+#        plt.xlabel('eigenvalues')
+#        plt.ylabel('Probability')
+#        plt.tight_layout()
+#        plt.savefig('data/%s/eigen_dist_%sD_%s_%s.png' % (project,data.shape[1], len(wishart_pairs),N ) )
+#        plt.close()
+
+
+#        wishart_eig = np.array( [ i[0] for i in wishart_pairs ] )
+#        pdfla = (Q/(2*np.pi*wishart_eig)) * np.sqrt((lamax-wishart_eig)*(wishart_eig-lamin))
+#        plt.figure()
+#        plt.plot(wishart_eig,pdfla), plt.xlabel(r'$\lambda$'), plt.ylabel(r'$p(\lambda)$')
+#        plt.scatter(wishart_eig,pdfla, c='red'), plt.tight_layout()
+#        plt.savefig('data/%s/wishart_pdf_%s.png' % (project,data.shape[1]) )
+#        plt.close()
+
+        wishart_pairs = [ i for i in eig_pairs if i[0] < lamin or i[0]> lamax ]
+
+        W = np.hstack( (i[1].reshape(data.shape[0],1) for i in wishart_pairs) )
+
+        Z = np.dot(W.T,data)
+        data = np.dot(W,Z)
+        cor = np.corrcoef(data)
+        cor = nearestPD(cor)
+        cor[cor>1]=1
+
+    elif mode == 'pca':
+        ''' Use pca to remove principal components'''
+        cor = np.cov(data)
+        #
+        eig_vals, eig_vecs = np.linalg.eigh(cor)
+        eig_pairs = [ (np.abs(eig_vals[i]), eig_vecs[:,i]) for i in range(len(eig_vals))]
+        eig_pairs.sort()
+        eig_pairs.reverse()
+
+        tot = sum(np.abs(eig_vals))
+        var_exp = [ (i/tot)*100 for i in sorted(np.abs(eig_vals), reverse=True)]
+        #
+        idx = list( range(2,5) )
+
+
+        W = np.hstack( (eig_pairs[i][1].reshape(data.shape[0],1) for i in idx) )
+        #
+        Z = np.dot(W.T,data)
+        #
+        data = np.dot(W,Z)
+        cor = np.corrcoef(data)
+    elif mode == 'norm':
+        ''' remove the market mode by successive normalization'''
+        cov = np.cov(data)
+        for i in range(500):
+            cov = StandardScaler().fit_transform(cov)
+            cov = cov.T
+
+        cor= np.zeros((N,N))
+        for i in range(N):
+            for j in range(N):
+                cor[i,j] = cov[i,j]/(np.sqrt(cov[i,i])*np.sqrt(cov[j,j]))
+        cor = nearestPD(cor)
+        cor[cor>1] = 1
+    elif mode == 'full':
+        cor = np.corrcoef(data)
+    ''' correlation'''
+    rho = cor
+elif project == 'iris':
+    iris = datasets.load_iris()
+    data=iris.data
+    data = MinMaxScaler().fit_transform(data)
+    N = data.shape[0]
+    D =  data.shape[1]
+    key = iris.target
+    name = key
+
+    from scipy.spatial.distance import pdist, squareform
+    dmat = squareform(pdist(data, 'euclidean'))
+    rho = 1-MinMaxScaler().fit_transform(dmat)
+#    rho = np.corrcoef(MinMaxScaler().fit_transform(data))
+
+elif project == 'blobs':
+    blob = datasets.make_blobs(n_samples=500,
+                             cluster_std=[0.25,0.5,1],
+                             centers = 3,
+                             n_features = 3,
+                             random_state=0,
+                             shuffle=False)
+
+    data = blob[0]
+    N = data.shape[0]
+    key = blob[1]
+    name = key
+
+    from scipy.spatial.distance import pdist, squareform
+    dmat = squareform(pdist(data, 'euclidean'))
+    rho = 1-MinMaxScaler().fit_transform(dmat)
+elif project == 'circle':
+    circle = datasets.make_circles(n_samples=500, factor=0.1,
+                                      noise=0.05,
+                                      shuffle=False)
+    data = circle[0]
+    key = circle[1]
+    name = key
+    N = data.shape[0]
+    D = data.shape[1]
+    data = MinMaxScaler().fit_transform(data)
+    from scipy.spatial.distance import pdist, squareform
+    dmat = squareform(pdist(data, 'euclidean'))
+    rho = 1-MinMaxScaler().fit_transform(dmat)
+
+elif project =='digits':
+    digits = datasets.load_digits()
+    data=digits.data
+    D =  data.shape[1]
+    key = digits.target
+    name = key
+    f_500 = np.load('data/%s/f_500.npy' % project)
+    data = data[f_500]
+    key = key[f_500]
+    name = name[f_500]
+    N = data.shape[0]
+    data = MinMaxScaler().fit_transform(data)
+    from scipy.spatial.distance import pdist, squareform
+    dmat = squareform(pdist(data, 'euclidean'))
+    rho = 1-MinMaxScaler().fit_transform(dmat)
+
+elif project =='wine':
+    wine = datasets.load_wine()
+    data = wine.data
+    key = wine.target
+    name = key
+    data = MinMaxScaler().fit_transform(data)
+    N = data.shape[0]
+
+    cor = np.corrcoef(data)
+    cor = nearestPD(cor)
+    eig_vals, eig_vecs = np.linalg.eigh(cor)
+    eig_pairs = [ (np.abs(eig_vals[i]), eig_vecs[:,i]) for i in range(len(eig_vals))]
+    eig_pairs.sort()
+    Q = data.shape[1]/data.shape[0]
+    lamax = 1+1/Q+2*np.sqrt(1/Q)
+    lamin = 1+1/Q-2*np.sqrt(1/Q)
+    wishart_pairs = [ i for i in eig_pairs if i[0] < lamin or i[0]> lamax ]
+    W = np.hstack( (i[1].reshape(data.shape[0],1) for i in wishart_pairs) )
+    Z = np.dot(W.T,data)
+    data = np.dot(W,Z)
+    from scipy.spatial.distance import pdist, squareform
+    dmat = squareform(pdist(data, 'euclidean'))
+    rho = 1-MinMaxScaler().fit_transform(dmat)
+
+if not os.path.exists('data/%s/%s' % (project,subproject)):
+    os.makedirs('data/%s/%s' % (project,subproject))
+
+try: expected = Lc(key,rho)
+except: expected = 'No Key'
+ground = Lc(np.ones(N),rho)
+
+eee
+# number of states
+q = N
+# population
+pop = 1000
+#number of generation
+generations = 10000
+# number of cores:
+cpu_ = 20
+
+# MUTPB Mutation probability
+mu = 1
+mutants = int(mu*pop)
+
+
+
+########### BUILD THE APPARATUS FOR THE GENETIC ALGORITHM
+
+f__ = [0]
+stat = []
+tol = 1e-3
+s_=0
+stall=500
+''' Create the population matrix, and its fitness vector'''
+people = np.random.randint(0,N,(pop,N), dtype=int)
+fitnesses = np.array(  Parallel(n_jobs=cpu_)(delayed(Lc)(people[x],rho) for x in range(pop) )    )
+idx = np.random.choice(pop,mutants,replace=False)
+mutated = np.array( Parallel(n_jobs=cpu_)(delayed(mutation)(people[x]) for x in idx) )
+status = [x[1] for x in mutated]
+mutated = [x[0] for x in mutated]
+fit_ = np.array(   Parallel(n_jobs=cpu_)(delayed(Lc)(x,rho) for x in mutated )    )
+
+
+for i in range(generations):
+    people, fitnesses = recombination(people, fitnesses, mutated, fit_)
+    best = np.argmax(fitnesses)
+    f__.append(fitnesses[best])
+    alpha = people[best]
+
+#    if s_==0:
+#        stat.append(status[best])
+#        alpha = people[best]
+#        np.save("data/%s/alpha.npy" % project, alpha)
+    print("-- Generation %i --" % i)
+    print("Clusters distribution Current Max")
+    print(itemfreq(alpha).T)
+    print("Clusters distribution Expected")
+    print(itemfreq(key).T)
+    print("Lc Current Max %s" % fitnesses[best])
+    print("Lc Expected %s" % expected)
+    print("Lc Ground State %s" % ground)
+    print('ARI Current Max %s' % metrics.adjusted_rand_score(key,alpha))
+    print('mutation = %s' % status[best])
+
+
+
+    ''' select Sividuals to be mutated'''
+    idx = np.random.choice(pop,mutants,replace=False)
+    mutated = np.array( Parallel(n_jobs=cpu_)(delayed(mutation)(people[x]) for x in idx) )
+    status = [x[1] for x in mutated]
+    mutated = [x[0] for x in mutated]
+    fit_ = np.array(   Parallel(n_jobs=cpu_)(delayed(Lc)(x,rho) for x in mutated )    )
+
+
+
+    '''Check Stall Generations for Convergence'''
+    if f__[i]-f__[i-1]<tol:
+        s_+=1
+        if s_>=stall:
+            i = generations + 1
+    else: s_=0
+
+ari = np.around( metrics.adjusted_rand_score(key,alpha), 3)
+lc = np.around( Lc(alpha,rho), 3)
+
+if mode:
+    np.save('data/%s/%s/%s/alpha_lc_%s_ari_%s.npy' % (project,subproject,mode,lc,ari), alpha)
+    np.save('data/%s/%s/%s/lc.npy' % (project,subproject,mode), f__)
+else:
+    np.save('data/%s/%s/alpha_lc_%s_ari_%s.npy' % (project,subproject,lc,ari), alpha)
+    np.save('data/%s/%s/lc.npy' % (project,subproject), f__)
+
+
+
+
+
+alpha = np.load('data/%s/alpha.npy' % project)
+
+lc =  np.load('data/%s/lc.npy' % project)
+
+
+plt.figure()
+plt.plot(range(len(lc)), lc, c='r')
+plt.ylabel(r'$L_c$')
+plt.xlabel('generations')
+plt.tight_layout()
+plt.savefig('data/%s/lc.png' % project)
+plt.close()
+
+
+''' create the graph'''
+ad = nx.Graph(nodes=N)
+for u in range(N):
+    for v in range(N):
+        if alpha[u] == alpha[v]:
+            ad.add_edge(u, v, weight= 1 - rho[u,v])
+
+Tree=nx.minimum_spanning_tree(ad)
+embed = nx.nx_pydot.pydot_layout(Tree, prog='neato')
+unique = np.unique( list(name) )
+if project in bag:
+    unique = np.unique (list(key))
+plt.figure(figsize=(4,4),dpi=300)
+ax0 = plt.subplot(111)
+for i in range(len(unique)):
+    idx = duplicates(key,unique[i])
+    labels = dict( (x, name[x]) for x in idx)
+    nx.draw_networkx(Tree, pos=embed,
+                                    nodelist=idx,
+                                    font_size=2,
+                                    node_size = 10,
+                                    with_labels=False,
+                                    labels=labels,
+                                    node_color=plt.cm.tab20([i]),ax=ax0)
+#                                    label =  '%s' % unique[i], ax=ax0)
+#                                    label =  '%s' % i, ax=ax0)
+
+#from mpl_toolkits.axes_grid1 import make_axes_locatable
+#h1, l1 = ax0.get_legend_handles_labels()
+#divider = make_axes_locatable(ax0)
+#cax = divider.append_axes("bottom", size="5%", pad=0.1)
+#
+#
+#for i in range(1,len(l1),2):
+#    l1[i] = ''
+#legend = cax.legend(h1,l1,loc='center',labelspacing = -.5, ncol=5)
+#LH = legend.legendHandles
+#for i__ in range(len(LH)):
+#    if type(LH[i__]) == mpl.lines.Line2D:
+#        LH[i__].set_visible(False)
+#legend.legendHandles = LH
+
+ax0.axis('off')
+#cax.axis('off')
+plt.tight_layout()
+plt.savefig('data/%s/%s_%s_%s_fspc.png' % (project,project,subproject,mode))
+plt.close()
