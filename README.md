@@ -4,7 +4,7 @@ Copyright SPC, 2018
 
 Potts Model Clustering.
 Super-Paramagnetic Clustering, Maximum entropy, and Maximum Likelihood Methods.
-See pre-print: https://arxiv.org/blahblah
+See pre-print: https://arxiv.org/abs/1810.02529
 
 GNU GPL
 
