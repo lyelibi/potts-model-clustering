@@ -162,7 +162,6 @@ print('nonzero',toseq)
     we create a numpy array where stocked are labeled with the same number
     if they belong to the same cluster, and 0 if unclustered'''
     
-number_of_clusters = len(tracker)
 solution = np.zeros(len(data),dtype=int)
 k=1
 for cluster in tracker.keys():
