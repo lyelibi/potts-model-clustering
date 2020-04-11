@@ -25,7 +25,6 @@ Created on Wed Mar 18 20:38:17 2020
 
 agglomerative spc new routine.
 """
-import time
 import numpy as np
 from sklearn.datasets import make_blobs
 from numba import jit
@@ -71,10 +70,6 @@ def clus_lc(gij,gii,gjj, ns=2):
     if cs<=ns:
         return 0
     return 0.5*( np.log(ns/cs) +  (ns - 1)*np.log( (ns**2 - ns) / ( ns**2 - cs) )  )
-
-
-''' merge and time '''
-t0 = time.time()
 
 ''' tracker is dictionary which stores the objects member of the same clusters.
     the data is stored as strings: i.e. cluster 1234 contains objects 210 & 890
@@ -152,10 +147,6 @@ while len(other_keys) >1:
         del tracker[label_a]
         del tracker[label_b]
         other_keys.append(new_label)
-
-t1 = time.time()
-toseq = t1-t0
-print('nonzero',toseq)
 
 ''' create the final clustering array:
     tracker contains the cluster memberships but as a dictionary
