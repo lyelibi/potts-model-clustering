@@ -1,10 +1,14 @@
 Project: “Potts Model Clustering”
 Author : Lionel Yelibi, 2018, University of Cape Town.
-Copyright SPC, 2018
+Copyright SPC, 2018, 2019, 2020
 
 Potts Model Clustering.
-Super-Paramagnetic Clustering, Maximum entropy, and Maximum Likelihood Methods.
+
+Super-Paramagnetic Clustering (2018)
 See pre-print: https://arxiv.org/abs/1810.02529
+
+Agglomerative Super-Paramagnetic Clustering (2019,2020)
+See pre-print: https://arxiv.org/abs/1908.00951
 
 GNU GPL
 
