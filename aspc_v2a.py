@@ -40,7 +40,8 @@ from numba import jit
     
 N = 500
 data,_ = make_blobs(n_samples=N,n_features=5000,shuffle=False,centers=10,random_state=0)
-'''  why not force the algo to provide a number of clusters '''
+'''  it is possible to provide a cluster number, if none is provide
+set cn = None'''
 cn = 5
 ''' aspc only requires a correlation matrix as input:
     here we convert the correlation to a dictionary for convenience. adding new
