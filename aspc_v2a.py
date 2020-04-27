@@ -53,30 +53,6 @@ def agglo_spc(G, cn= None):
     gdic = { i : { j : G[i,j] for j in range(N)} for i in range(N)}
     del G
     
-    ''' the cluster function:
-        compute the likelihood which occurs when two objects are clustered or
-        the object own likelihood. By design if a cluster only containts one object
-        its likelihood will be 0'''
-    @jit(nopython=True)
-    def clus_lc(gij,gii,gjj, ns=2):
-        ''' variables description:
-            ns is the size of the cluster.
-            cs is the intracluster correlation.
-            gij, gii, and gjj respectively are
-            correlations relating to interactions between objects i and j, and
-            their respective self-correlations. self-correlations (i.e. gii, gjj)
-            are 1 for individual objects and >1 for clusters'''
-            
-        if ns==1:
-            return 0
-        ''' intracluster correlation'''   
-        cs = 2*gij+gii+gjj
-        ''' relatively low cs means noisy and suboptimal clusters.
-        The coupling parameter gs (see paper) isn't not defined'''
-        if cs<=ns:
-            return 0
-        return 0.5*( np.log(ns/cs) +  (ns - 1)*np.log( (ns**2 - ns) / ( ns**2 - cs) )  )
-    
     ''' tracker is dictionary which stores the objects member of the same clusters.
         the data is stored as strings: i.e. cluster 1234 contains objects 210 & 890
         which results in tracker['1234'] == '210_890' '''
