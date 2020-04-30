@@ -133,6 +133,7 @@ def agglo_spc(G, cn= None):
         ''' removes merged elements and update others with the new cluster.
         only do it when a positive cost is found.'''
         if costs[next_merge]>0:
+            other_keys = list(tracker.keys())
             other_keys.remove(label_a)
             other_keys.remove(label_b)
             other_keys.append(new_label)
